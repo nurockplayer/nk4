@@ -110,4 +110,5 @@ Write-Host "  1. 重新開啟 PowerShell，或執行: . $PROFILE" -ForegroundCol
 Write-Host "  2. nk4 https://jable.tv/videos/XXXXX/" -ForegroundColor Gray
 Write-Host "  3. 預覽不下載：nk4 -Url https://... -DryRun" -ForegroundColor Gray
 Write-Host ""
-Write-Host "注意：第一次需要從 Brave 匯入 cookie（yt-dlp 會自動處理）" -ForegroundColor Yellow
+Write-Host "注意：預設使用 Chrome 匯入 cookie。若使用其他瀏覽器，請設定："
+Write-Host "  在執行 nk4 時加上 --cookies-from-browser brave (或 edge / firefox)" -ForegroundColor Yellow
