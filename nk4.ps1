@@ -5,10 +5,47 @@ $script:Nk4Dir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
 function nk4 {
     param(
-        [Parameter(Mandatory=$true)]
-        [string]$Url,
-        [switch]$DryRun
+        [Parameter(ValueFromRemainingArguments=$true)]
+        [string[]]$Remaining
     )
+
+    $url = ""
+    $browser = "chrome"
+    $dryRun = $false
+
+    # Manual arg parsing
+    $i = 0
+    while ($i -lt $Remaining.Count) {
+        switch -Wildcard ($Remaining[$i]) {
+            "--dry-run" {
+                $dryRun = $true
+                $i++
+            }
+            "--cookies-from-browser" {
+                if ($i + 1 -lt $Remaining.Count) {
+                    $browser = $Remaining[$i + 1]
+                    $i += 2
+                } else { $i++ }
+            }
+            default {
+                if ($Remaining[$i] -match "^--cookies-from-browser=(.+)$") {
+                    $browser = $Matches[1]
+                } elseif ($Remaining[$i] -notlike "-*") {
+                    $url = $Remaining[$i]
+                }
+                $i++
+            }
+        }
+    }
+
+    if ([string]::IsNullOrEmpty($url)) {
+        Write-Host "Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "範例:"
+        Write-Host "  nk4 https://jable.tv/videos/XXXXX/"
+        Write-Host "  nk4 https://missav.ai/dm31/XXXXX/ --cookies-from-browser brave"
+        return
+    }
 
     $pwDir = Join-Path $script:Nk4Dir "node_modules" "playwright"
 
@@ -56,7 +93,7 @@ function nk4 {
         return
     }
 
-    $json = node $scrapeScript $Url 2>&1
+    $json = node $scrapeScript $url 2>&1
     if (-not $?) {
         Write-Host "❌ 解析失敗" -ForegroundColor Red
         return
@@ -79,7 +116,7 @@ function nk4 {
 
     # Dynamic referer based on URL
     $referer = "https://jable.tv/"
-    if ($Url -match "missav") {
+    if ($url -match "missav") {
         $referer = "https://missav.ai/"
     }
 
@@ -90,13 +127,13 @@ function nk4 {
     Write-Host "🎬 串流: $m3u8Url" -ForegroundColor Green
     Write-Host ""
 
-    if ($DryRun) {
+    if ($dryRun) {
         Write-Host "🧪 預覽指令:" -ForegroundColor Yellow
-        Write-Host "yt-dlp --cookies-from-browser brave --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' --referer '$referer' -o '$filename.%(ext)s' '$m3u8Url'" -ForegroundColor Gray
+        Write-Host "yt-dlp --cookies-from-browser $browser --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' --referer '$referer' -o '$filename.%(ext)s' '$m3u8Url'" -ForegroundColor Gray
     } else {
         Write-Host "⬇️  開始下載..." -ForegroundColor Green
         yt-dlp `
-            --cookies-from-browser brave `
+            --cookies-from-browser $browser `
             --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" `
             --referer $referer `
             -o "$filename.%(ext)s" `

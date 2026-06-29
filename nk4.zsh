@@ -1,6 +1,5 @@
-# nk4: one-command download from jable.tv
-# Usage: nk4 <url>
-#   or:  nk4 <url> --dry-run   (just print the command, don't run)
+# nk4: one-command downloader
+# Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]
 
 NK4_DIR="${NK4_DIR:-$(cd "$(dirname "${(%):-%x}")" && pwd)}"
 NK4_SCRIPT="$NK4_DIR/scrape.mjs"
@@ -25,20 +24,50 @@ _nk4_ensure_deps() {
 }
 
 nk4() {
-  local url=$1
+  local url=""
+  local browser="chrome"
   local dry_run=false
 
+  # Parse arguments like yt-dlp style
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        dry_run=true
+        shift
+        ;;
+      --cookies-from-browser)
+        browser="$2"
+        shift 2
+        ;;
+      --cookies-from-browser=*)
+        browser="${1#*=}"
+        shift
+        ;;
+      -*)
+        echo "未知參數: $1"
+        echo "Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]"
+        return 1
+        ;;
+      *)
+        url="$1"
+        shift
+        ;;
+    esac
+  done
+
   if [[ -z "$url" ]]; then
-    echo "Usage: nk4 <jable.tv-url> [--dry-run]"
+    echo "Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]"
+    echo ""
+    echo "範例:"
+    echo "  nk4 https://jable.tv/videos/XXXXX/"
+    echo "  nk4 https://missav.ai/dm31/XXXXX/"
+    echo "  nk4 https://jable.tv/videos/XXXXX/ --cookies-from-browser brave"
+    echo "  nk4 https://jable.tv/videos/XXXXX/ --cookies-from-browser edge --dry-run"
     return 1
   fi
 
-  if [[ "$2" == "--dry-run" ]]; then
-    dry_run=true
-  fi
-
   _nk4_ensure_deps || {
-    echo "❌ 自動安裝 Playwright 失敗，請手動執行:"
+    echo "❌ 自動安裝 Playwright 失败，請手動執行:"
     echo "  cd $NK4_DIR && pnpm add playwright && pnpm exec playwright install chromium"
     return 1
   }
@@ -77,11 +106,11 @@ nk4() {
 
   if $dry_run; then
     echo "🧪 預覽指令:"
-    echo "yt-dlp --cookies-from-browser brave --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' --referer '${referer}' -o '${filename}.%(ext)s' '${m3u8_url}'"
+    echo "yt-dlp --cookies-from-browser ${browser} --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' --referer '${referer}' -o '${filename}.%(ext)s' '${m3u8_url}'"
   else
     echo "⬇️  開始下載..."
     yt-dlp \
-      --cookies-from-browser brave \
+      --cookies-from-browser ${browser} \
       --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
       --referer "${referer}" \
       -o "${filename}.%(ext)s" \

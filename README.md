@@ -6,7 +6,7 @@
 
 - macOS / Linux / Windows
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp/releases)（下載引擎，需手動安裝）
-- 使用 Brave 瀏覽器（用於匯入 cookie）
+- Chrome 瀏覽器（用於匯入 cookie，預設）
 
 > 其餘依賴（fnm、Node.js、pnpm、Playwright、Chromium）安裝腳本會自動處理。
 
@@ -73,10 +73,19 @@ nk4 https://jable.tv/videos/XXXXX/ --dry-run
 
 只顯示將要執行的 yt-dlp 指令，不實際下載。
 
+## 自訂瀏覽器
+
+預設使用 Chrome 匯入 cookie。若使用其他瀏覽器，設定環境變數即可：
+
+```bash
+export NK4_BROWSER=brave
+export NK4_BROWSER=edge
+export NK4_BROWSER=firefox
+```
+
 ## 注意事項
 
-- 第一次執行時 yt-dlp 會從 Brave 瀏覽器匯入 cookie。
-- 如果 Brave 未開啟，yt-dlp 可能會要求你解鎖瀏覽器的密碼金鑰環。
+- 預設從 Chrome 匯入 cookie，可透過 `NK4_BROWSER` 環境變數切換瀏覽器
 - 腳本中的 Chromium 快取約佔 170MB 硬碟空間，僅第一次安裝時下載。
 
 ## 檔案結構
