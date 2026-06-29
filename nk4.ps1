@@ -77,6 +77,12 @@ function nk4 {
         return
     }
 
+    # Dynamic referer based on URL
+    $referer = "https://jable.tv/"
+    if ($Url -match "missav") {
+        $referer = "https://missav.ai/"
+    }
+
     $filename = $title -replace '[/\\:*?"<>|]', '_'
     $filename = $filename.Trim()
 
@@ -86,13 +92,13 @@ function nk4 {
 
     if ($DryRun) {
         Write-Host "🧪 預覽指令:" -ForegroundColor Yellow
-        Write-Host "yt-dlp --cookies-from-browser brave --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' --referer 'https://jable.tv/' -o '$filename.%(ext)s' '$m3u8Url'" -ForegroundColor Gray
+        Write-Host "yt-dlp --cookies-from-browser brave --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' --referer '$referer' -o '$filename.%(ext)s' '$m3u8Url'" -ForegroundColor Gray
     } else {
         Write-Host "⬇️  開始下載..." -ForegroundColor Green
         yt-dlp `
             --cookies-from-browser brave `
             --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" `
-            --referer "https://jable.tv/" `
+            --referer $referer `
             -o "$filename.%(ext)s" `
             $m3u8Url
     }

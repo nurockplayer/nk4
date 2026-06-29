@@ -61,6 +61,12 @@ nk4() {
     return 1
   fi
 
+  # Dynamic referer based on URL
+  local referer="https://jable.tv/"
+  if [[ "$url" == *missav* ]]; then
+    referer="https://missav.ai/"
+  fi
+
   local filename="${title//\//_}"
   filename="${filename%% }"
   filename="${filename## }"
@@ -71,13 +77,13 @@ nk4() {
 
   if $dry_run; then
     echo "🧪 預覽指令:"
-    echo "yt-dlp --cookies-from-browser brave --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' --referer 'https://jable.tv/' -o '${filename}.%(ext)s' '${m3u8_url}'"
+    echo "yt-dlp --cookies-from-browser brave --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' --referer '${referer}' -o '${filename}.%(ext)s' '${m3u8_url}'"
   else
     echo "⬇️  開始下載..."
     yt-dlp \
       --cookies-from-browser brave \
       --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
-      --referer "https://jable.tv/" \
+      --referer "${referer}" \
       -o "${filename}.%(ext)s" \
       "${m3u8_url}"
   fi

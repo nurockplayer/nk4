@@ -39,11 +39,22 @@ async function main() {
     if (matches) matches.forEach(url => m3u8Urls.add(url));
   }
 
-  // Prefer mushroomtrack or similar CDN over edge/media variants
+  // Domain-specific CDN priority
+  const domainPriorities = {
+    'jable.tv':   ['mushroomtrack', 'edge-hls'],
+    'missav.ai':  ['surrit.com', 'edge-hls'],
+  };
+  const domain = Object.keys(domainPriorities).find(d => URL.includes(d)) || '';
+  const cdnOrder = domainPriorities[domain] || [];
+
   const sorted = [...m3u8Urls].sort((a, b) => {
-    const aScore = a.includes('mushroomtrack') ? 2 : a.includes('edge-hls') ? 1 : 0;
-    const bScore = b.includes('mushroomtrack') ? 2 : b.includes('edge-hls') ? 1 : 0;
-    return bScore - aScore;
+    const cdnScore = (url) => {
+      const idx = cdnOrder.findIndex(cdn => url.includes(cdn));
+      return idx >= 0 ? (cdnOrder.length - idx) * 10 : 0;
+    };
+    // Prefer resolution-specific video.m3u8 over generic playlist.m3u8
+    const specificScore = (url) => url.match(/\d{3,4}p\/video\.m3u8/) ? 5 : url.endsWith('playlist.m3u8') ? 2 : 3;
+    return (cdnScore(b) + specificScore(b)) - (cdnScore(a) + specificScore(a));
   });
 
   const result = {
