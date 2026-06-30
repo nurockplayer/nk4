@@ -122,6 +122,12 @@ function nk4 {
         return
     }
 
+    # X/Twitter — 直接 API 下載，免 Playwright（在依賴檢查之前路由）
+    if ($url -match "https?://(x|twitter)\.com/") {
+        _Nk4DownloadX $url $browser $dryRun
+        return
+    }
+
     $pwDir = Join-Path $script:Nk4Dir "node_modules" "playwright"
 
     if (-not (Test-Path $pwDir)) {
@@ -161,12 +167,6 @@ function nk4 {
     }
 
     Write-Host "🔍 正在解析: $Url" -ForegroundColor Cyan
-
-    # X/Twitter — 直接 API 下載，免 Playwright
-    if ($url -match "https?://(x|twitter)\.com/") {
-        _Nk4DownloadX $url $browser $dryRun
-        return
-    }
 
     $scrapeScript = Join-Path $script:Nk4Dir "scrape.mjs"
     if (-not (Test-Path $scrapeScript)) {

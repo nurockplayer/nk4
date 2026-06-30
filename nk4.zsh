@@ -54,9 +54,9 @@ _nk4_download_x() {
     return 1
   }
 
-  # Must-fix: single-pass JSON parse with validation
+  # Must-fix: use printf instead of echo to preserve backslash escapes in JSON
   local parsed
-  parsed=$(echo "$json" | node -e "
+  parsed=$(printf '%s' "$json" | node -e "
     let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
       try {
         const j=JSON.parse(d);
@@ -89,9 +89,9 @@ _nk4_download_x() {
   esac
 
   local user_name text media_url
-  user_name=$(echo "$parsed" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).user_name))")
-  text=$(echo "$parsed" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).text))")
-  media_url=$(echo "$parsed" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).media_url))")
+  user_name=$(printf '%s' "$parsed" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).user_name))")
+  text=$(printf '%s' "$parsed" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).text))")
+  media_url=$(printf '%s' "$parsed" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).media_url))")
 
   # Must-fix: validate media_url scheme
   if ! echo "$media_url" | grep -qE '^https://'; then
