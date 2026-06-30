@@ -1,6 +1,14 @@
 # nk4
 
-`nk4` 是一個從 jable.tv 與 missav.ai 一鍵下載影片的命令列工具。
+`nk4` 是一個從多個網站一鍵下載影片的命令列工具。
+
+### 支援網站
+
+| 網站 | 方式 | 需要登入 |
+|------|------|----------|
+| jable.tv | Playwright 解析 .m3u8 + yt-dlp | 否（敏感內容需 cookies） |
+| missav.ai | Playwright 解析 .m3u8 + yt-dlp | 否（敏感內容需 cookies） |
+| x.com / twitter.com | 直接 API → yt-dlp | 否 |
 
 ## 安裝需求
 
@@ -57,6 +65,8 @@ winget install yt-dlp
 
 ```bash
 nk4 https://jable.tv/videos/XXXXX/
+nk4 https://missav.ai/dm31/XXXXX/
+nk4 https://x.com/xxx/status/123456789
 ```
 
 工具會自動完成以下流程：
