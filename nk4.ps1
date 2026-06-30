@@ -3,66 +3,6 @@
 
 $script:Nk4Dir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
-function _Nk4DownloadX {
-    param($Url, $Browser, $DryRun)
-
-    if ($url -notmatch "https?://(x|twitter)\.com/([^/]+)/status/(\d+)") {
-        Write-Host "❌ 無法解析 X/Twitter 網址" -ForegroundColor Red
-        return
-    }
-
-    $userScreen = $Matches[2]
-    $tweetId = $Matches[3]
-
-    Write-Host "🔍 正在解析 X 貼文: @${userScreen} / ${tweetId}" -ForegroundColor Cyan
-
-    try {
-        $json = Invoke-RestMethod -Uri "https://api.vxtwitter.com/${userScreen}/status/${tweetId}" -Method Get
-    } catch {
-        Write-Host "❌ 無法取得貼文資料: $_" -ForegroundColor Red
-        return
-    }
-
-    if ($json.message -eq "No tweet found") {
-        Write-Host "❌ 找不到該貼文（可能已刪除或設為不公開）" -ForegroundColor Red
-        return
-    }
-
-    $userName = $json.user_name
-    $text = $json.text
-    $mediaUrl = $null
-    if ($json.media_extended -and $json.media_extended.Count -gt 0) {
-        $mediaUrl = $json.media_extended[0].url
-    }
-
-    if ([string]::IsNullOrEmpty($mediaUrl)) {
-        Write-Host "❌ 該貼文沒有影片" -ForegroundColor Red
-        if (-not [string]::IsNullOrEmpty($text)) {
-            Write-Host "   內容: $text" -ForegroundColor Gray
-        }
-        return
-    }
-
-    Write-Host "📄 作者: $userName" -ForegroundColor Green
-    Write-Host "📄 內容: $text" -ForegroundColor Green
-
-    $filename = "${userScreen}_${tweetId}"
-
-    Write-Host "🎬 影片: $mediaUrl" -ForegroundColor Green
-    Write-Host ""
-
-    if ($DryRun) {
-        Write-Host "🧪 預覽指令:" -ForegroundColor Yellow
-        Write-Host "yt-dlp --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' -o '${filename}.%(ext)s' '${mediaUrl}'" -ForegroundColor Gray
-    } else {
-        Write-Host "⬇️  開始下載..." -ForegroundColor Green
-        yt-dlp `
-            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" `
-            -o "${filename}.%(ext)s" `
-            $mediaUrl
-    }
-}
-
 function nk4 {
     param(
         [Parameter(ValueFromRemainingArguments=$true)]
@@ -146,12 +86,6 @@ function nk4 {
     }
 
     Write-Host "🔍 正在解析: $Url" -ForegroundColor Cyan
-
-    # X/Twitter — 直接 API 下載，免 Playwright
-    if ($url -match "https?://(x|twitter)\.com/") {
-        _Nk4DownloadX $url $browser $dryRun
-        return
-    }
 
     $scrapeScript = Join-Path $script:Nk4Dir "scrape.mjs"
     if (-not (Test-Path $scrapeScript)) {
