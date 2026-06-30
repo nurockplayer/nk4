@@ -33,31 +33,69 @@ _nk4_download_x() {
   tweet_id=$(echo "$url" | grep -oE '/status/[0-9]+' | tr -cd '0-9')
   user_screen=$(echo "$url" | awk -F'/' '{for(i=1;i<=NF;i++){if($i~/^(x|twitter)\.com$/ && i+1<=NF){print $(i+1);exit}}}')
 
-  print "🔍 正在解析 X 貼文: @$user_screen / $tweet_id"
-
-  local json
-  json=$(curl -sL "https://api.vxtwitter.com/$user_screen/status/$tweet_id" 2>&1)
-  if [[ $? -ne 0 || -z "$json" ]]; then
-    echo "❌ 無法取得貼文資料"
+  # Must-fix: reject empty / malformed params before any API call
+  if [[ -z "$tweet_id" || -z "$user_screen" ]]; then
+    echo "❌ 無法解析 X/Twitter 網址"
     return 1
   fi
 
-  # 用 node 解析 JSON
-  local text user_name media_url
-  user_name=$(echo "$json" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const j=JSON.parse(d);console.log(j.user_name||'')})" 2>/dev/null)
-  text=$(echo "$json" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const j=JSON.parse(d);console.log(j.text||'')})" 2>/dev/null)
-  media_url=$(echo "$json" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const j=JSON.parse(d);if(j.media_extended)console.log(j.media_extended[0]?.url||'')})" 2>/dev/null)
+  # Must-fix: validate X username format (alphanumeric + underscore, 1-15 chars)
+  if ! echo "$user_screen" | grep -qE '^[A-Za-z0-9_]{1,15}$'; then
+    echo "❌ 無效的 X/Twitter 使用者名稱: $user_screen"
+    return 1
+  fi
 
-  if [[ -z "$media_url" ]]; then
-    # 檢查是否為 No tweet found
-    local err
-    err=$(echo "$json" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const j=JSON.parse(d);console.log(j.message||'')})" 2>/dev/null)
-    if [[ "$err" == "No tweet found" ]]; then
+  print "🔍 正在解析 X 貼文: @$user_screen / $tweet_id"
+
+  # Must-fix: curl -fsSL to fail on HTTP errors
+  local json
+  json=$(curl -fsSL "https://api.vxtwitter.com/$user_screen/status/$tweet_id" 2>&1) || {
+    echo "❌ 無法取得貼文資料"
+    return 1
+  }
+
+  # Must-fix: single-pass JSON parse with validation
+  local parsed
+  parsed=$(echo "$json" | node -e "
+    let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
+      try {
+        const j=JSON.parse(d);
+        if (j.message==='No tweet found') { console.log('ERR_NOT_FOUND'); return; }
+        const videos = (j.media_extended||[]).filter(m => m.type==='video');
+        if (!videos.length) { console.log('ERR_NO_VIDEO'); return; }
+        const m = videos[0];
+        console.log(JSON.stringify({user_name:j.user_name||'',text:j.text||'',media_url:m.url}));
+      } catch(e) { console.log('ERR_PARSE'); }
+    })
+  " 2>/dev/null)
+
+  case "$parsed" in
+    ERR_NOT_FOUND)
       echo "❌ 找不到該貼文（可能已刪除或設為不公開）"
-    else
+      return 1
+      ;;
+    ERR_NO_VIDEO)
       echo "❌ 該貼文沒有影片"
-      [[ -n "$text" ]] && echo "   內容: $text"
-    fi
+      return 1
+      ;;
+    ERR_PARSE)
+      echo "❌ 無法解析貼文資料"
+      return 1
+      ;;
+    "")
+      echo "❌ 無法取得貼文資料"
+      return 1
+      ;;
+  esac
+
+  local user_name text media_url
+  user_name=$(echo "$parsed" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).user_name))")
+  text=$(echo "$parsed" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).text))")
+  media_url=$(echo "$parsed" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).media_url))")
+
+  # Must-fix: validate media_url scheme
+  if ! echo "$media_url" | grep -qE '^https://'; then
+    echo "❌ 影片網址格式異常，放棄下載"
     return 1
   fi
 
@@ -71,12 +109,13 @@ _nk4_download_x() {
 
   if $dry_run; then
     echo "🧪 預覽指令:"
-    echo "yt-dlp --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' -o '${filename}.%(ext)s' '${media_url}'"
+    echo "yt-dlp --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' -o '${filename}.%(ext)s' -- '${media_url}'"
   else
     print "⬇️  開始下載..."
     yt-dlp \
       --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
       -o "${filename}.%(ext)s" \
+      -- \
       "${media_url}"
   fi
 }

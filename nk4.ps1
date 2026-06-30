@@ -14,6 +14,12 @@ function _Nk4DownloadX {
     $userScreen = $Matches[2]
     $tweetId = $Matches[3]
 
+    # Validate X username format (alphanumeric + underscore, 1-15 chars)
+    if ($userScreen -notmatch '^[A-Za-z0-9_]{1,15}$') {
+        Write-Host "❌ 無效的 X/Twitter 使用者名稱: $userScreen" -ForegroundColor Red
+        return
+    }
+
     Write-Host "🔍 正在解析 X 貼文: @${userScreen} / ${tweetId}" -ForegroundColor Cyan
 
     try {
@@ -31,8 +37,10 @@ function _Nk4DownloadX {
     $userName = $json.user_name
     $text = $json.text
     $mediaUrl = $null
-    if ($json.media_extended -and $json.media_extended.Count -gt 0) {
-        $mediaUrl = $json.media_extended[0].url
+    # Filter for video type only
+    if ($json.media_extended) {
+        $video = $json.media_extended | Where-Object { $_.type -eq "video" } | Select-Object -First 1
+        if ($video) { $mediaUrl = $video.url }
     }
 
     if ([string]::IsNullOrEmpty($mediaUrl)) {
@@ -40,6 +48,12 @@ function _Nk4DownloadX {
         if (-not [string]::IsNullOrEmpty($text)) {
             Write-Host "   內容: $text" -ForegroundColor Gray
         }
+        return
+    }
+
+    # Validate media_url scheme
+    if ($mediaUrl -notmatch '^https://') {
+        Write-Host "❌ 影片網址格式異常，放棄下載" -ForegroundColor Red
         return
     }
 
@@ -53,12 +67,13 @@ function _Nk4DownloadX {
 
     if ($DryRun) {
         Write-Host "🧪 預覽指令:" -ForegroundColor Yellow
-        Write-Host "yt-dlp --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' -o '${filename}.%(ext)s' '${mediaUrl}'" -ForegroundColor Gray
+        Write-Host "yt-dlp --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' -o '${filename}.%(ext)s' -- '${mediaUrl}'" -ForegroundColor Gray
     } else {
         Write-Host "⬇️  開始下載..." -ForegroundColor Green
         yt-dlp `
             --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" `
             -o "${filename}.%(ext)s" `
+            -- `
             $mediaUrl
     }
 }
