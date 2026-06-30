@@ -1,4 +1,6 @@
 # nk4: one-command downloader
+# Inspired by yt-dlp — one URL, one download.
+# Supported sites: jable.tv, missav.ai, x.com, twitter.com
 # Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]
 
 NK4_DIR="${NK4_DIR:-$(cd "$(dirname "${(%):-%x}")" && pwd)}"
@@ -21,6 +23,62 @@ _nk4_ensure_deps() {
     fi
   fi
   return 0
+}
+
+_nk4_download_x() {
+  local url="$1" browser="$2" dry_run="$3"
+
+  # 從 URL 抽出貼文 ID 和使用者名稱
+  local tweet_id user_screen
+  tweet_id=$(echo "$url" | grep -oE '/status/[0-9]+' | tr -cd '0-9')
+  user_screen=$(echo "$url" | awk -F'/' '{for(i=1;i<=NF;i++){if($i~/^(x|twitter)\.com$/ && i+1<=NF){print $(i+1);exit}}}')
+
+  print "🔍 正在解析 X 貼文: @$user_screen / $tweet_id"
+
+  local json
+  json=$(curl -sL "https://api.vxtwitter.com/$user_screen/status/$tweet_id" 2>&1)
+  if [[ $? -ne 0 || -z "$json" ]]; then
+    echo "❌ 無法取得貼文資料"
+    return 1
+  fi
+
+  # 用 node 解析 JSON
+  local text user_name media_url
+  user_name=$(echo "$json" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const j=JSON.parse(d);console.log(j.user_name||'')})" 2>/dev/null)
+  text=$(echo "$json" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const j=JSON.parse(d);console.log(j.text||'')})" 2>/dev/null)
+  media_url=$(echo "$json" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const j=JSON.parse(d);if(j.media_extended)console.log(j.media_extended[0]?.url||'')})" 2>/dev/null)
+
+  if [[ -z "$media_url" ]]; then
+    # 檢查是否為 No tweet found
+    local err
+    err=$(echo "$json" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const j=JSON.parse(d);console.log(j.message||'')})" 2>/dev/null)
+    if [[ "$err" == "No tweet found" ]]; then
+      echo "❌ 找不到該貼文（可能已刪除或設為不公開）"
+    else
+      echo "❌ 該貼文沒有影片"
+      [[ -n "$text" ]] && echo "   內容: $text"
+    fi
+    return 1
+  fi
+
+  print "📄 作者: $user_name"
+  print "📄 內容: $text"
+
+  local filename="${user_screen}_${tweet_id}"
+
+  print "🎬 影片: $media_url"
+  print ""
+
+  if $dry_run; then
+    echo "🧪 預覽指令:"
+    echo "yt-dlp --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' -o '${filename}.%(ext)s' '${media_url}'"
+  else
+    print "⬇️  開始下載..."
+    yt-dlp \
+      --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+      -o "${filename}.%(ext)s" \
+      "${media_url}"
+  fi
 }
 
 nk4() {
@@ -58,12 +116,23 @@ nk4() {
   if [[ -z "$url" ]]; then
     echo "Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]"
     echo ""
+    echo "支援網站:"
+    echo "  jable.tv / missav.ai — 使用 Playwright + yt-dlp（需 cookies）"
+    echo "  x.com / twitter.com  — 使用 API 直接下載（免登入）"
+    echo ""
     echo "範例:"
     echo "  nk4 https://jable.tv/videos/XXXXX/"
     echo "  nk4 https://missav.ai/dm31/XXXXX/"
+    echo "  nk4 https://x.com/xxx/status/123456789"
     echo "  nk4 https://jable.tv/videos/XXXXX/ --cookies-from-browser brave"
-    echo "  nk4 https://jable.tv/videos/XXXXX/ --cookies-from-browser edge --dry-run"
+    echo "  nk4 https://x.com/xxx/status/123456789 --dry-run"
     return 1
+  fi
+
+  # X/Twitter URL = 免 Playwright 直接下載
+  if echo "$url" | grep -qE 'https?://(x|twitter)\.com/'; then
+    _nk4_download_x "$url" "$browser" "$dry_run"
+    return $?
   fi
 
   _nk4_ensure_deps || {
