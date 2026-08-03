@@ -12,10 +12,13 @@ _nk4_ensure_deps() {
     print "📦 安裝 Playwright 依賴..."
     (cd "$NK4_DIR" && pnpm add playwright &>/dev/null) || return 1
   fi
-  local pw_ver browser_ok
+  local pw_ver
   pw_ver=$(node -e "console.log(require('playwright/package.json').version)" 2>/dev/null)
   if [[ -n "$pw_ver" ]]; then
-    ls "$HOME/Library/Caches/ms-playwright/chromium-"* "$HOME/.cache/ms-playwright/chromium-"* &>/dev/null
+    local browser_ok
+    # 檢查 chromium / chromium_headless_shell 是否已下載（兩者任一存在即可）
+    find "$HOME/Library/Caches/ms-playwright" "$HOME/.cache/ms-playwright" \
+      -maxdepth 1 \( -name 'chromium-*' -o -name 'chromium_headless_shell-*' \) 2>/dev/null | grep -q .
     browser_ok=$?
     if [[ $browser_ok -ne 0 ]]; then
       print "🌐 下載 Chromium 瀏覽器..."
