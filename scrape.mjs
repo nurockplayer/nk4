@@ -23,8 +23,13 @@ async function main() {
     if (url.includes('.m3u8')) m3u8Urls.add(url);
   });
 
-  await page.goto(URL, { waitUntil: 'networkidle', timeout: 60000 });
-  await page.waitForTimeout(5000);
+  await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  // jable.tv 有持續的背景網路活動，networkidle 不可靠；改用輪詢等待 m3u8 出現
+  const waitStart = Date.now();
+  while (m3u8Urls.size === 0 && Date.now() - waitStart < 30000) {
+    await page.waitForTimeout(2000);
+  }
+  await page.waitForTimeout(1000);
 
   const ogTitle = await page.$eval('meta[property="og:title"]', el => el.getAttribute('content')).catch(() => null);
 
