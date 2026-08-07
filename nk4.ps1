@@ -23,24 +23,35 @@ function _Nk4DownloadX {
     Write-Host "🔍 正在解析 X 貼文: @${userScreen} / ${tweetId}" -ForegroundColor Cyan
 
     try {
-        $json = Invoke-RestMethod -Uri "https://api.vxtwitter.com/${userScreen}/status/${tweetId}" -Method Get
+        # 使用 fxtwitter API：會提供 m3u8 HLS 播放清單。
+        # vxtwitter 只回傳最高解析度的單一 mp4，4K/長片會超過 twimg CDN 的單一
+        # response 上限（503 Response object too large），HLS 分段下載才能繞過。
+        $json = Invoke-RestMethod -Uri "https://api.fxtwitter.com/${userScreen}/status/${tweetId}" -Method Get
     } catch {
         Write-Host "❌ 無法取得貼文資料: $_" -ForegroundColor Red
         return
     }
 
-    if ($json.message -eq "No tweet found") {
+    if ($json.code -ne 200 -or -not $json.tweet) {
         Write-Host "❌ 找不到該貼文（可能已刪除或設為不公開）" -ForegroundColor Red
         return
     }
 
-    $userName = $json.user_name
-    $text = $json.text
+    $userName = $json.tweet.author.name
+    $text = $json.tweet.raw_text.text
     $mediaUrl = $null
-    # Filter for video type only
-    if ($json.media_extended) {
-        $video = $json.media_extended | Where-Object { $_.type -eq "video" } | Select-Object -First 1
-        if ($video) { $mediaUrl = $video.url }
+    if ($json.tweet.media -and $json.tweet.media.all) {
+        $media = $json.tweet.media.all | Select-Object -First 1
+        if ($media.type -eq "video") {
+            # HLS 播放清單優先（避免單一超大 mp4 超過 CDN 上限），沒有才用 mp4
+            $m3u8 = $media.formats | Where-Object { $_.container -eq "m3u8" } | Select-Object -First 1
+            if ($m3u8) {
+                $mediaUrl = $m3u8.url
+            } else {
+                $mp4 = $media.formats | Where-Object { $_.container -eq "mp4" -and $_.bitrate } | Select-Object -First 1
+                $mediaUrl = $mp4.url
+            }
+        }
     }
 
     if ([string]::IsNullOrEmpty($mediaUrl)) {
@@ -65,16 +76,31 @@ function _Nk4DownloadX {
     Write-Host "🎬 影片: $mediaUrl" -ForegroundColor Green
     Write-Host ""
 
-    if ($DryRun) {
-        Write-Host "🧪 預覽指令:" -ForegroundColor Yellow
-        Write-Host "yt-dlp --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' -o '${filename}.%(ext)s' -- '${mediaUrl}'" -ForegroundColor Gray
+    # HLS（.m3u8）需帶 Referer 才能連到 segment，mp4 則不需要
+    if ($mediaUrl -match '\.m3u8') {
+        if ($DryRun) {
+            Write-Host "🧪 預覽指令:" -ForegroundColor Yellow
+            Write-Host "yt-dlp --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' --referer 'https://x.com/' -o '${filename}.%(ext)s' '${mediaUrl}'" -ForegroundColor Gray
+        } else {
+            Write-Host "⬇️  開始下載..." -ForegroundColor Green
+            yt-dlp `
+                --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" `
+                --referer "https://x.com/" `
+                -o "${filename}.%(ext)s" `
+                $mediaUrl
+        }
     } else {
-        Write-Host "⬇️  開始下載..." -ForegroundColor Green
-        yt-dlp `
-            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" `
-            -o "${filename}.%(ext)s" `
-            -- `
-            $mediaUrl
+        if ($DryRun) {
+            Write-Host "🧪 預覽指令:" -ForegroundColor Yellow
+            Write-Host "yt-dlp --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' -o '${filename}.%(ext)s' -- '${mediaUrl}'" -ForegroundColor Gray
+        } else {
+            Write-Host "⬇️  開始下載..." -ForegroundColor Green
+            yt-dlp `
+                --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" `
+                -o "${filename}.%(ext)s" `
+                -- `
+                $mediaUrl
+        }
     }
 }
 
