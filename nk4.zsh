@@ -15,8 +15,13 @@ _nk4_ensure_deps() {
   local pw_ver browser_ok
   pw_ver=$(node -e "console.log(require('playwright/package.json').version)" 2>/dev/null)
   if [[ -n "$pw_ver" ]]; then
-    ls "$HOME/Library/Caches/ms-playwright/chromium-"* "$HOME/.cache/ms-playwright/chromium-"* &>/dev/null
-    browser_ok=$?
+    # A Chromium cache directory can belong to an older Playwright release.
+    # Probe the same headless launch mode that scrape.mjs uses instead.
+    if (cd "$NK4_DIR" && node -e "const { chromium } = require('playwright'); (async () => { const browser = await chromium.launch({ headless: true }); await browser.close(); })().catch(error => { console.error(error.message); process.exit(1); });" &>/dev/null); then
+      browser_ok=0
+    else
+      browser_ok=1
+    fi
     if [[ $browser_ok -ne 0 ]]; then
       print "🌐 下載 Chromium 瀏覽器..."
       (cd "$NK4_DIR" && pnpm exec playwright install chromium &>/dev/null) || return 1
@@ -185,7 +190,15 @@ nk4() {
   local json
   json=$(node "$NK4_SCRIPT" "$url" 2>&1)
   if [[ $? -ne 0 ]]; then
-    echo "❌ 解析失敗"
+    local scrape_error
+    scrape_error=$(printf '%s' "$json" | node -e "let data = ''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => { try { const result = JSON.parse(data); process.stdout.write(result.error || ''); } catch {} });" 2>/dev/null)
+    if [[ -n "$scrape_error" ]]; then
+      echo "❌ 解析失敗：$scrape_error"
+    elif [[ -n "$json" ]]; then
+      echo "❌ 解析失敗：$json"
+    else
+      echo "❌ 解析失敗：未取得診斷資訊"
+    fi
     return 1
   fi
 

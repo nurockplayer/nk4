@@ -142,19 +142,14 @@ function nk4 {
         Pop-Location
     }
 
-    $localAppData = $env:LOCALAPPDATA
-    $pwCacheDirs = @(
-        "$localAppData\ms-playwright\chromium-*",
-        "$env:USERPROFILE\.cache\ms-playwright\chromium-*"
-    )
-    $chromiumFound = $false
-    foreach ($pattern in $pwCacheDirs) {
-        if (Get-ChildItem $pattern -ErrorAction SilentlyContinue) {
-            $chromiumFound = $true
-            break
-        }
-    }
-    if (-not $chromiumFound) {
+    # A Chromium cache directory can belong to an older Playwright release.
+    # Probe the same headless launch mode that scrape.mjs uses instead.
+    Push-Location $script:Nk4Dir
+    node -e "const { chromium } = require('playwright'); (async () => { const browser = await chromium.launch({ headless: true }); await browser.close(); })().catch(error => { console.error(error.message); process.exit(1); });" 2>$null
+    $chromiumLaunchStatus = $LASTEXITCODE
+    Pop-Location
+
+    if ($chromiumLaunchStatus -ne 0) {
         Write-Host "🌐 下載 Chromium 瀏覽器..." -ForegroundColor Yellow
         Push-Location $script:Nk4Dir
         pnpm exec playwright install chromium *>&1 | Out-Null
@@ -176,7 +171,18 @@ function nk4 {
 
     $json = node $scrapeScript $url 2>&1
     if (-not $?) {
-        Write-Host "❌ 解析失敗" -ForegroundColor Red
+        $rawError = ($json | Out-String).Trim()
+        $scrapeError = $null
+        try {
+            $scrapeError = ($rawError | ConvertFrom-Json).error
+        } catch {
+            $scrapeError = $rawError
+        }
+
+        if ([string]::IsNullOrWhiteSpace($scrapeError)) {
+            $scrapeError = "未取得診斷資訊"
+        }
+        Write-Host "❌ 解析失敗：$scrapeError" -ForegroundColor Red
         return
     }
 
