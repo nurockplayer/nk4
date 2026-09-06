@@ -53,8 +53,11 @@ _nk4_download_x() {
   print "🔍 正在解析 X 貼文: @$user_screen / $tweet_id"
 
   # Must-fix: curl -fsSL to fail on HTTP errors
+  # 使用 fxtwitter API：會提供 m3u8 HLS 播放清單。
+  # vxtwitter 只回傳最高解析度的單一 mp4，4K/長片會超過 twimg CDN 的單一 response
+  # 上限（503 Response object too large），HLS 分段下載才能繞過。
   local json
-  json=$(curl -fsSL "https://api.vxtwitter.com/$user_screen/status/$tweet_id" 2>&1) || {
+  json=$(curl -fsSL "https://api.fxtwitter.com/$user_screen/status/$tweet_id" 2>&1) || {
     echo "❌ 無法取得貼文資料"
     return 1
   }
@@ -65,11 +68,15 @@ _nk4_download_x() {
     let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
       try {
         const j=JSON.parse(d);
-        if (j.message==='No tweet found') { console.log('ERR_NOT_FOUND'); return; }
-        const videos = (j.media_extended||[]).filter(m => m.type==='video');
-        if (!videos.length) { console.log('ERR_NO_VIDEO'); return; }
-        const m = videos[0];
-        console.log(JSON.stringify({user_name:j.user_name||'',text:j.text||'',media_url:m.url}));
+        if (j.code!==200 || !j.tweet) { console.log('ERR_NOT_FOUND'); return; }
+        const media=j.tweet.media;
+        if (!media || !media.all || !media.all.length) { console.log('ERR_NO_VIDEO'); return; }
+        const m=media.all[0];
+        if (m.type!=='video') { console.log('ERR_NO_VIDEO'); return; }
+        const m3u8=(m.formats||[]).find(f=>f.container==='m3u8');
+        const mp4=(m.formats||[]).find(f=>f.container==='mp4'&&f.bitrate) || m;
+        if (!m3u8 && !mp4) { console.log('ERR_NO_VIDEO'); return; }
+        console.log(JSON.stringify({user_name:j.tweet.author?.name||'',text:j.tweet.raw_text?.text||j.tweet.text||'',m3u8_url:m3u8?m3u8.url:null,mp4_url:mp4?mp4.url:null}));
       } catch(e) { console.log('ERR_PARSE'); }
     })
   " 2>/dev/null)
@@ -96,7 +103,8 @@ _nk4_download_x() {
   local user_name text media_url
   user_name=$(printf '%s' "$parsed" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).user_name))")
   text=$(printf '%s' "$parsed" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).text))")
-  media_url=$(printf '%s' "$parsed" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).media_url))")
+  # HLS 播放清單優先（避免單一超大 mp4 超過 CDN 上限），沒有才用 mp4
+  media_url=$(printf '%s' "$parsed" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const j=JSON.parse(d);console.log(j.m3u8_url||j.mp4_url||'')})")
 
   # Must-fix: validate media_url scheme
   if ! echo "$media_url" | grep -qE '^https://'; then
@@ -112,16 +120,31 @@ _nk4_download_x() {
   print "🎬 影片: $media_url"
   print ""
 
-  if $dry_run; then
-    echo "🧪 預覽指令:"
-    echo "yt-dlp --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' -o '${filename}.%(ext)s' -- '${media_url}'"
+  # HLS（.m3u8）需帶 Origin/Referer 才能連到 segment，mp4 則不需要
+  if [[ "$media_url" == *.m3u8* ]]; then
+    if $dry_run; then
+      echo "🧪 預覽指令:"
+      echo "yt-dlp --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' --referer 'https://x.com/' -o '${filename}.%(ext)s' '${media_url}'"
+    else
+      print "⬇️  開始下載..."
+      yt-dlp \
+        --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+        --referer "https://x.com/" \
+        -o "${filename}.%(ext)s" \
+        "${media_url}"
+    fi
   else
-    print "⬇️  開始下載..."
-    yt-dlp \
-      --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
-      -o "${filename}.%(ext)s" \
-      -- \
-      "${media_url}"
+    if $dry_run; then
+      echo "🧪 預覽指令:"
+      echo "yt-dlp --user-agent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' -o '${filename}.%(ext)s' -- '${media_url}'"
+    else
+      print "⬇️  開始下載..."
+      yt-dlp \
+        --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+        -o "${filename}.%(ext)s" \
+        -- \
+        "${media_url}"
+    fi
   fi
 }
 
