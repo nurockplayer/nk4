@@ -1,16 +1,29 @@
-import { chromium } from 'playwright';
+import { chromium, firefox, webkit } from 'playwright';
 
 const URL = process.argv[2];
+const engine = (process.argv[3] || process.env.NK4_ENGINE || 'chromium').toLowerCase();
+const browserTypes = { chromium, chrome: chromium, firefox, webkit };
+
 if (!URL) {
-  console.error('Usage: node scrape.mjs <jable-url>');
+  console.error('Usage: node scrape.mjs <url|--probe-browser> [engine]');
+  process.exit(1);
+}
+if (!browserTypes[engine]) {
+  console.error(JSON.stringify({ error: `不支援的 Playwright 引擎：${engine}` }));
   process.exit(1);
 }
 
 async function main() {
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  });
+  const launchOptions = engine === 'chrome'
+    ? { headless: true, channel: 'chrome' }
+    : { headless: true };
+  const browser = await browserTypes[engine].launch(launchOptions);
+  if (URL === '--probe-browser') {
+    await browser.close();
+    return;
+  }
+  // Let each engine provide its own correct, current user agent.
+  const context = await browser.newContext();
   const page = await context.newPage();
 
   const m3u8Urls = new Set();
