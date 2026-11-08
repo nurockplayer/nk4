@@ -14,9 +14,9 @@
 
 - macOS / Linux / Windows
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp/releases)（下載引擎，需手動安裝）
-- Chrome 瀏覽器（用於匯入 cookie，預設）
+- Chrome 或其他 yt-dlp 支援的瀏覽器（用於匯入 cookie，預設 Chrome）
 
-> 其餘依賴（fnm、Node.js、pnpm、Playwright、Chromium）安裝腳本會自動處理。
+> 其餘依賴（fnm、Node.js、pnpm、Playwright、所選瀏覽器引擎（預設 Chromium））安裝腳本會自動處理。
 
 ## 安裝方式
 
@@ -71,7 +71,7 @@ nk4 https://x.com/xxx/status/123456789
 
 工具會自動完成以下流程：
 
-1. 檢查 Playwright 與 Chromium 是否已安裝，若無則自動安裝
+1. 檢查 Playwright 與所選引擎能否啟動，若不能則安裝該引擎並再次檢查
 2. 開啟目標頁面，擷取影片標題與 `.m3u8` 串流網址
 3. 呼叫 yt-dlp 下載影片並以標題作為檔名
 
@@ -85,6 +85,34 @@ nk4 https://jable.tv/videos/XXXXX/ --dry-run
 
 ## 自訂瀏覽器
 
+解析引擎與 cookie 來源為兩個獨立選項，不會自動互相切換。
+
+### 頁面解析引擎
+
+支援 Playwright 的 `chromium`（預設）、`firefox`、`webkit`：
+
+```bash
+nk4 https://example.com/video --browser firefox
+nk4 https://example.com/video --browser=webkit
+export NK4_ENGINE=firefox
+bash setup.sh
+```
+
+PowerShell：
+
+```powershell
+$env:NK4_ENGINE = "firefox"
+.\setup.ps1
+nk4 https://example.com/video --browser webkit
+```
+
+`--browser` 優先於 `NK4_ENGINE`。安裝腳本只安裝所選引擎；切換引擎時會自動檢查及安裝。亦可手動執行 `pnpm exec playwright install firefox webkit`。Linux 若缺少系統函式庫，依 Playwright 診斷安裝所需依賴後重試。
+
+WebKit 是 Playwright 的 WebKit 引擎，不是啟動本機 Safari；Firefox 亦使用 Playwright 配套版本，不直接使用個人瀏覽器設定檔。各網站相容性可能不同，可切回 Chromium。X/Twitter API 路徑仍不需要 Playwright。
+
+### Cookie 來源
+
+
 預設使用 Chrome 匯入 cookie。若使用其他瀏覽器，設定環境變數即可：
 
 ```bash
@@ -96,7 +124,9 @@ export NK4_BROWSER=firefox
 ## 注意事項
 
 - 預設從 Chrome 匯入 cookie，可透過 `NK4_BROWSER` 環境變數切換瀏覽器
-- 腳本中的 Chromium 快取約佔 170MB 硬碟空間，僅第一次安裝時下載。
+- 瀏覽器快取大小因引擎與版本而異；Playwright 升級後可能需重新下載。
+- `NK4_BROWSER` 僅指定 yt-dlp cookie 來源；`--cookies-from-browser` 優先。PowerShell 可用 `$env:NK4_BROWSER = "firefox"`。
+- 解析器使用全新、未登入的瀏覽器 context，不會匯入個人 cookie。
 
 ## 檔案結構
 
@@ -109,3 +139,14 @@ nk4/
 ├── setup.ps1        # 安裝腳本（Windows）
 └── .gitignore
 ```
+
+## 開發檢查
+
+```bash
+pnpm test
+node --check scrape.mjs
+zsh -n nk4.zsh
+bash -n setup.sh
+```
+
+單元測試不需安裝瀏覽器；實際啟動檢查可用 `node browser.mjs probe firefox`（或 chromium / webkit）。

@@ -51,10 +51,12 @@ else
 fi
 
 # --- 3. Install playwright + chromium ---
-echo "📦 安裝 Playwright 與 Chromium..."
+echo "📦 安裝 Playwright 與所選瀏覽器..."
 cd "$NK4_DIR"
 pnpm add playwright
-pnpm exec playwright install chromium
+engine=$(node "$NK4_DIR/browser.mjs" name)
+pnpm exec playwright install "$engine"
+node "$NK4_DIR/browser.mjs" probe "$engine"
 echo "✅ Playwright 就緒"
 
 # --- 4. Check yt-dlp ---

@@ -1,31 +1,23 @@
 # nk4: one-command downloader
 # Inspired by yt-dlp — one URL, one download.
 # Supported sites: jable.tv, missav.ai, x.com, twitter.com
-# Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]
+# Usage: nk4 <url> [--browser <chromium|firefox|webkit>] [--cookies-from-browser <browser>] [--dry-run]
 
 NK4_DIR="${NK4_DIR:-$(cd "$(dirname "${(%):-%x}")" && pwd)}"
 NK4_SCRIPT="$NK4_DIR/scrape.mjs"
 NK4_PW="$NK4_DIR/node_modules/playwright"
 
 _nk4_ensure_deps() {
+  local engine
+  engine=$(node "$NK4_DIR/browser.mjs" name "$1") || return 1
   if [[ ! -d "$NK4_PW" ]]; then
     print "📦 安裝 Playwright 依賴..."
     (cd "$NK4_DIR" && pnpm add playwright &>/dev/null) || return 1
   fi
-  local pw_ver browser_ok
-  pw_ver=$(node -e "console.log(require('playwright/package.json').version)" 2>/dev/null)
-  if [[ -n "$pw_ver" ]]; then
-    # A Chromium cache directory can belong to an older Playwright release.
-    # Probe the same headless launch mode that scrape.mjs uses instead.
-    if (cd "$NK4_DIR" && node -e "const { chromium } = require('playwright'); (async () => { const browser = await chromium.launch({ headless: true }); await browser.close(); })().catch(error => { console.error(error.message); process.exit(1); });" &>/dev/null); then
-      browser_ok=0
-    else
-      browser_ok=1
-    fi
-    if [[ $browser_ok -ne 0 ]]; then
-      print "🌐 下載 Chromium 瀏覽器..."
-      (cd "$NK4_DIR" && pnpm exec playwright install chromium &>/dev/null) || return 1
-    fi
+  if ! node "$NK4_DIR/browser.mjs" probe "$engine"; then
+    print "🌐 安裝 $engine 瀏覽器..."
+    (cd "$NK4_DIR" && pnpm exec playwright install "$engine") || return 1
+    node "$NK4_DIR/browser.mjs" probe "$engine" || return 1
   fi
   return 0
 }
@@ -127,17 +119,29 @@ _nk4_download_x() {
 
 nk4() {
   local url=""
-  local browser="chrome"
+  local browser="${NK4_BROWSER:-chrome}"
+  local engine="${NK4_ENGINE:-chromium}"
   local dry_run=false
 
   # Parse arguments like yt-dlp style
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --browser)
+        [[ $# -ge 2 && -n "$2" && "$2" != -* ]] || { echo "❌ --browser 需要引擎名稱"; return 1; }
+        engine="$2"
+        shift 2
+        ;;
+      --browser=*)
+        engine="${1#*=}"
+        [[ -n "$engine" ]] || { echo "❌ --browser 需要引擎名稱"; return 1; }
+        shift
+        ;;
       --dry-run)
         dry_run=true
         shift
         ;;
       --cookies-from-browser)
+        [[ $# -ge 2 && -n "$2" && "$2" != -* ]] || { echo "❌ --cookies-from-browser 需要瀏覽器名稱"; return 1; }
         browser="$2"
         shift 2
         ;;
@@ -147,7 +151,7 @@ nk4() {
         ;;
       -*)
         echo "未知參數: $1"
-        echo "Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]"
+        echo "Usage: nk4 <url> [--browser <chromium|firefox|webkit>] [--cookies-from-browser <browser>] [--dry-run]"
         return 1
         ;;
       *)
@@ -158,7 +162,7 @@ nk4() {
   done
 
   if [[ -z "$url" ]]; then
-    echo "Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]"
+    echo "Usage: nk4 <url> [--browser <chromium|firefox|webkit>] [--cookies-from-browser <browser>] [--dry-run]"
     echo ""
     echo "支援網站:"
     echo "  jable.tv / missav.ai — 使用 Playwright + yt-dlp（需 cookies）"
@@ -179,16 +183,16 @@ nk4() {
     return $?
   fi
 
-  _nk4_ensure_deps || {
+  _nk4_ensure_deps "$engine" || {
     echo "❌ 自動安裝 Playwright 失败，請手動執行:"
-    echo "  cd $NK4_DIR && pnpm add playwright && pnpm exec playwright install chromium"
+    echo "  cd $NK4_DIR && pnpm add playwright && pnpm exec playwright install $engine"
     return 1
   }
 
   echo "🔍 正在解析: $url"
 
   local json
-  json=$(node "$NK4_SCRIPT" "$url" 2>&1)
+  json=$(node "$NK4_SCRIPT" "$url" "$engine" 2>&1)
   if [[ $? -ne 0 ]]; then
     local scrape_error
     scrape_error=$(printf '%s' "$json" | node -e "let data = ''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => { try { const result = JSON.parse(data); process.stdout.write(result.error || ''); } catch {} });" 2>/dev/null)
