@@ -85,22 +85,47 @@ function nk4 {
     )
 
     $url = ""
-    $browser = "chrome"
+    $browser = if ($env:NK4_BROWSER) { $env:NK4_BROWSER } else { "chrome" }
+    $engine = if ($env:NK4_ENGINE) { $env:NK4_ENGINE } else { "chromium" }
     $dryRun = $false
 
     # Manual arg parsing
     $i = 0
     while ($i -lt $Remaining.Count) {
         switch -Wildcard ($Remaining[$i]) {
+            "--browser" {
+                if ($i + 1 -ge $Remaining.Count -or $Remaining[$i + 1] -like "-*" -or [string]::IsNullOrWhiteSpace($Remaining[$i + 1])) {
+                    Write-Host "❌ --browser 需要引擎名稱"; return
+                }
+                $engine = $Remaining[$i + 1]
+                $i += 2
+            }
+            "--browser=*" {
+                $engine = $Remaining[$i].Substring(10)
+                if ([string]::IsNullOrWhiteSpace($engine)) { Write-Host "❌ --browser 需要引擎名稱"; return }
+                $i++
+            }
+            "--engine" {
+                if ($i + 1 -ge $Remaining.Count -or $Remaining[$i + 1] -like "-*" -or [string]::IsNullOrWhiteSpace($Remaining[$i + 1])) {
+                    Write-Host "❌ --engine 需要引擎名稱"; return
+                }
+                $engine = $Remaining[$i + 1]
+                $i += 2
+            }
+            "--engine=*" {
+                $engine = $Remaining[$i].Substring(9)
+                if ([string]::IsNullOrWhiteSpace($engine)) { Write-Host "❌ --engine 需要引擎名稱"; return }
+                $i++
+            }
             "--dry-run" {
                 $dryRun = $true
                 $i++
             }
             "--cookies-from-browser" {
-                if ($i + 1 -lt $Remaining.Count) {
+                if ($i + 1 -lt $Remaining.Count -and $Remaining[$i + 1] -notlike "-*" -and -not [string]::IsNullOrWhiteSpace($Remaining[$i + 1])) {
                     $browser = $Remaining[$i + 1]
                     $i += 2
-                } else { $i++ }
+                } else { Write-Host "❌ --cookies-from-browser 需要瀏覽器名稱"; return }
             }
             default {
                 if ($Remaining[$i] -match "^--cookies-from-browser=(.+)$") {
@@ -114,7 +139,7 @@ function nk4 {
     }
 
     if ([string]::IsNullOrEmpty($url)) {
-        Write-Host "Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]" -ForegroundColor Yellow
+        Write-Host "Usage: nk4 <url> [--browser <chromium|chrome|firefox|webkit>] [--cookies-from-browser <browser>] [--dry-run]" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "範例:"
         Write-Host "  nk4 https://jable.tv/videos/XXXXX/"
@@ -128,37 +153,42 @@ function nk4 {
         return
     }
 
+    $browserScript = Join-Path $script:Nk4Dir "browser.mjs"
+    $engine = node $browserScript name $engine
+    if ($LASTEXITCODE -ne 0) { return }
+
     $pwDir = Join-Path $script:Nk4Dir "node_modules" "playwright"
 
     if (-not (Test-Path $pwDir)) {
         Write-Host "📦 安裝 Playwright 依賴..." -ForegroundColor Yellow
         Push-Location $script:Nk4Dir
-        pnpm add playwright *>&1 | Out-Null
+        pnpm install *>&1 | Out-Null
         if (-not $?) {
-            Write-Host "❌ pnpm add playwright 失敗" -ForegroundColor Red
+            Write-Host "❌ pnpm install 失敗" -ForegroundColor Red
             Pop-Location
             return
         }
         Pop-Location
     }
 
-    # A Chromium cache directory can belong to an older Playwright release.
-    # Probe the same headless launch mode that scrape.mjs uses instead.
-    Push-Location $script:Nk4Dir
-    node -e "const { chromium } = require('playwright'); (async () => { const browser = await chromium.launch({ headless: true }); await browser.close(); })().catch(error => { console.error(error.message); process.exit(1); });" 2>$null
-    $chromiumLaunchStatus = $LASTEXITCODE
-    Pop-Location
-
-    if ($chromiumLaunchStatus -ne 0) {
-        Write-Host "🌐 下載 Chromium 瀏覽器..." -ForegroundColor Yellow
-        Push-Location $script:Nk4Dir
-        pnpm exec playwright install chromium *>&1 | Out-Null
-        if (-not $?) {
-            Write-Host "❌ 安裝 Chromium 失敗" -ForegroundColor Red
-            Pop-Location
+    node $browserScript probe $engine
+    if ($LASTEXITCODE -ne 0) {
+        if ($engine -eq "chrome") {
+            Write-Host "❌ Google Chrome 無法啟動。請安裝 Chrome，或使用 --engine chromium。"
             return
         }
-        Pop-Location
+        Write-Host "🌐 安裝 $engine 瀏覽器..." -ForegroundColor Yellow
+        Push-Location $script:Nk4Dir
+        try {
+            if ($engine -eq "chromium") {
+                pnpm exec playwright install --only-shell chromium
+            } else {
+                pnpm exec playwright install $engine
+            }
+            if ($LASTEXITCODE -ne 0) { return }
+        } finally { Pop-Location }
+        node $browserScript probe $engine
+        if ($LASTEXITCODE -ne 0) { return }
     }
 
     Write-Host "🔍 正在解析: $Url" -ForegroundColor Cyan
@@ -169,7 +199,7 @@ function nk4 {
         return
     }
 
-    $json = node $scrapeScript $url 2>&1
+    $json = node $scrapeScript $url $engine 2>&1
     if (-not $?) {
         $rawError = ($json | Out-String).Trim()
         $scrapeError = $null
