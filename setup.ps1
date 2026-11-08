@@ -59,8 +59,8 @@ if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
 # --- 3. Install playwright + chromium ---
 Write-Host "📦 安裝 Playwright 與 Chromium..." -ForegroundColor Yellow
 Push-Location $Nk4Dir
-pnpm add playwright *>&1 | Out-Null
-pnpm exec playwright install chromium *>&1 | Out-Null
+pnpm install *>&1 | Out-Null
+pnpm exec playwright install --only-shell chromium *>&1 | Out-Null
 Pop-Location
 Write-Host "✅ Playwright 就緒" -ForegroundColor Green
 

@@ -1,32 +1,40 @@
 # nk4: one-command downloader
 # Inspired by yt-dlp — one URL, one download.
 # Supported sites: jable.tv, missav.ai, x.com, twitter.com
-# Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]
+# Usage: nk4 <url> [--engine chromium|chrome|firefox|webkit] [--cookies-from-browser <browser>] [--dry-run]
 
 NK4_DIR="${NK4_DIR:-$(cd "$(dirname "${(%):-%x}")" && pwd)}"
 NK4_SCRIPT="$NK4_DIR/scrape.mjs"
 NK4_PW="$NK4_DIR/node_modules/playwright"
 
 _nk4_ensure_deps() {
+  local engine="$1"
   if [[ ! -d "$NK4_PW" ]]; then
     print "📦 安裝 Playwright 依賴..."
-    (cd "$NK4_DIR" && pnpm add playwright &>/dev/null) || return 1
+    (cd "$NK4_DIR" && pnpm install &>/dev/null) || return 1
   fi
-  local pw_ver browser_ok
-  pw_ver=$(node -e "console.log(require('playwright/package.json').version)" 2>/dev/null)
-  if [[ -n "$pw_ver" ]]; then
-    # A Chromium cache directory can belong to an older Playwright release.
-    # Probe the same headless launch mode that scrape.mjs uses instead.
-    if (cd "$NK4_DIR" && node -e "const { chromium } = require('playwright'); (async () => { const browser = await chromium.launch({ headless: true }); await browser.close(); })().catch(error => { console.error(error.message); process.exit(1); });" &>/dev/null); then
-      browser_ok=0
-    else
-      browser_ok=1
-    fi
-    if [[ $browser_ok -ne 0 ]]; then
-      print "🌐 下載 Chromium 瀏覽器..."
-      (cd "$NK4_DIR" && pnpm exec playwright install chromium &>/dev/null) || return 1
-    fi
+
+  # Probe with the project's own Playwright, from its own directory.
+  if (cd "$NK4_DIR" && node "$NK4_SCRIPT" --probe-browser "$engine" &>/dev/null); then
+    return 0
   fi
+
+  if [[ "$engine" == "chrome" ]]; then
+    print "❌ Google Chrome 無法啟動。請安裝 Chrome，或使用 --engine chromium。"
+    return 1
+  fi
+
+  print "🌐 安裝 Playwright $engine 瀏覽器..."
+  if [[ "$engine" == "chromium" ]]; then
+    (cd "$NK4_DIR" && pnpm exec playwright install --only-shell chromium &>/dev/null) || return 1
+  else
+    (cd "$NK4_DIR" && pnpm exec playwright install "$engine" &>/dev/null) || return 1
+  fi
+
+  (cd "$NK4_DIR" && node "$NK4_SCRIPT" --probe-browser "$engine" &>/dev/null) || {
+    print "❌ 無法啟動 Playwright $engine，請檢查瀏覽器與系統依賴。"
+    return 1
+  }
   return 0
 }
 
@@ -129,12 +137,25 @@ nk4() {
   local url=""
   local browser="chrome"
   local dry_run=false
+  local engine="${NK4_ENGINE:-chromium}"
 
   # Parse arguments like yt-dlp style
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --dry-run)
         dry_run=true
+        shift
+        ;;
+      --engine)
+        if [[ $# -lt 2 || -z "$2" || "$2" == -* ]]; then
+          echo "❌ --engine 需要指定瀏覽器引擎"
+          return 1
+        fi
+        engine="$2"
+        shift 2
+        ;;
+      --engine=*)
+        engine="${1#*=}"
         shift
         ;;
       --cookies-from-browser)
@@ -147,7 +168,7 @@ nk4() {
         ;;
       -*)
         echo "未知參數: $1"
-        echo "Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]"
+        echo "Usage: nk4 <url> [--engine chromium|chrome|firefox|webkit] [--cookies-from-browser <browser>] [--dry-run]"
         return 1
         ;;
       *)
@@ -157,8 +178,14 @@ nk4() {
     esac
   done
 
+  engine="${engine:l}"
+  case "$engine" in
+    chromium|chrome|firefox|webkit) ;;
+    *) echo "❌ 不支援的 Playwright 引擎：$engine"; return 1 ;;
+  esac
+
   if [[ -z "$url" ]]; then
-    echo "Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]"
+    echo "Usage: nk4 <url> [--engine chromium|chrome|firefox|webkit] [--cookies-from-browser <browser>] [--dry-run]"
     echo ""
     echo "支援網站:"
     echo "  jable.tv / missav.ai — 使用 Playwright + yt-dlp（需 cookies）"
@@ -179,16 +206,12 @@ nk4() {
     return $?
   fi
 
-  _nk4_ensure_deps || {
-    echo "❌ 自動安裝 Playwright 失败，請手動執行:"
-    echo "  cd $NK4_DIR && pnpm add playwright && pnpm exec playwright install chromium"
-    return 1
-  }
+  _nk4_ensure_deps "$engine" || return 1
 
   echo "🔍 正在解析: $url"
 
   local json
-  json=$(node "$NK4_SCRIPT" "$url" 2>&1)
+  json=$(node "$NK4_SCRIPT" "$url" "$engine" 2>&1)
   if [[ $? -ne 0 ]]; then
     local scrape_error
     scrape_error=$(printf '%s' "$json" | node -e "let data = ''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => { try { const result = JSON.parse(data); process.stdout.write(result.error || ''); } catch {} });" 2>/dev/null)

@@ -53,8 +53,8 @@ fi
 # --- 3. Install playwright + chromium ---
 echo "📦 安裝 Playwright 與 Chromium..."
 cd "$NK4_DIR"
-pnpm add playwright
-pnpm exec playwright install chromium
+pnpm install
+pnpm exec playwright install --only-shell chromium
 echo "✅ Playwright 就緒"
 
 # --- 4. Check yt-dlp ---
