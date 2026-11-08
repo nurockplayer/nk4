@@ -87,6 +87,7 @@ function nk4 {
     $url = ""
     $browser = "chrome"
     $dryRun = $false
+    $engine = if ($env:NK4_ENGINE) { $env:NK4_ENGINE } else { "chromium" }
 
     # Manual arg parsing
     $i = 0
@@ -95,6 +96,14 @@ function nk4 {
             "--dry-run" {
                 $dryRun = $true
                 $i++
+            }
+            "--engine" {
+                if ($i + 1 -ge $Remaining.Count -or $Remaining[$i + 1] -like "-*") {
+                    Write-Host "❌ --engine 需要指定瀏覽器引擎" -ForegroundColor Red
+                    return
+                }
+                $engine = $Remaining[$i + 1]
+                $i += 2
             }
             "--cookies-from-browser" {
                 if ($i + 1 -lt $Remaining.Count) {
@@ -105,6 +114,8 @@ function nk4 {
             default {
                 if ($Remaining[$i] -match "^--cookies-from-browser=(.+)$") {
                     $browser = $Matches[1]
+                } elseif ($Remaining[$i] -match "^--engine=(.+)$") {
+                    $engine = $Matches[1]
                 } elseif ($Remaining[$i] -notlike "-*") {
                     $url = $Remaining[$i]
                 }
@@ -113,8 +124,14 @@ function nk4 {
         }
     }
 
+    $engine = $engine.ToLowerInvariant()
+    if (@("chromium", "chrome", "firefox", "webkit") -notcontains $engine) {
+        Write-Host "❌ 不支援的 Playwright 引擎：$engine" -ForegroundColor Red
+        return
+    }
+
     if ([string]::IsNullOrEmpty($url)) {
-        Write-Host "Usage: nk4 <url> [--cookies-from-browser <browser>] [--dry-run]" -ForegroundColor Yellow
+        Write-Host "Usage: nk4 <url> [--engine chromium|chrome|firefox|webkit] [--cookies-from-browser <browser>] [--dry-run]" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "範例:"
         Write-Host "  nk4 https://jable.tv/videos/XXXXX/"
@@ -133,32 +150,50 @@ function nk4 {
     if (-not (Test-Path $pwDir)) {
         Write-Host "📦 安裝 Playwright 依賴..." -ForegroundColor Yellow
         Push-Location $script:Nk4Dir
-        pnpm add playwright *>&1 | Out-Null
+        pnpm install *>&1 | Out-Null
         if (-not $?) {
-            Write-Host "❌ pnpm add playwright 失敗" -ForegroundColor Red
+            Write-Host "❌ pnpm install 失敗" -ForegroundColor Red
             Pop-Location
             return
         }
         Pop-Location
     }
 
-    # A Chromium cache directory can belong to an older Playwright release.
-    # Probe the same headless launch mode that scrape.mjs uses instead.
+    # Check the selected engine using nk4's own Playwright version.
+    $scrapeScript = Join-Path $script:Nk4Dir "scrape.mjs"
     Push-Location $script:Nk4Dir
-    node -e "const { chromium } = require('playwright'); (async () => { const browser = await chromium.launch({ headless: true }); await browser.close(); })().catch(error => { console.error(error.message); process.exit(1); });" 2>$null
-    $chromiumLaunchStatus = $LASTEXITCODE
+    node $scrapeScript --probe-browser $engine 2>$null
+    $engineLaunchStatus = $LASTEXITCODE
     Pop-Location
 
-    if ($chromiumLaunchStatus -ne 0) {
-        Write-Host "🌐 下載 Chromium 瀏覽器..." -ForegroundColor Yellow
-        Push-Location $script:Nk4Dir
-        pnpm exec playwright install chromium *>&1 | Out-Null
-        if (-not $?) {
-            Write-Host "❌ 安裝 Chromium 失敗" -ForegroundColor Red
-            Pop-Location
+    if ($engineLaunchStatus -ne 0) {
+        if ($engine -eq "chrome") {
+            Write-Host "❌ Google Chrome 無法啟動。請安裝 Chrome，或使用 --engine chromium。" -ForegroundColor Red
             return
         }
+
+        Write-Host "🌐 安裝 Playwright $engine 瀏覽器..." -ForegroundColor Yellow
+        Push-Location $script:Nk4Dir
+        if ($engine -eq "chromium") {
+            pnpm exec playwright install --only-shell chromium *>&1 | Out-Null
+        } else {
+            pnpm exec playwright install $engine *>&1 | Out-Null
+        }
+        $installStatus = $LASTEXITCODE
         Pop-Location
+        if ($installStatus -ne 0) {
+            Write-Host "❌ 安裝 Playwright $engine 失敗" -ForegroundColor Red
+            return
+        }
+
+        Push-Location $script:Nk4Dir
+        node $scrapeScript --probe-browser $engine 2>$null
+        $engineLaunchStatus = $LASTEXITCODE
+        Pop-Location
+        if ($engineLaunchStatus -ne 0) {
+            Write-Host "❌ 無法啟動 Playwright $engine，請檢查瀏覽器與系統依賴。" -ForegroundColor Red
+            return
+        }
     }
 
     Write-Host "🔍 正在解析: $Url" -ForegroundColor Cyan
@@ -169,7 +204,7 @@ function nk4 {
         return
     }
 
-    $json = node $scrapeScript $url 2>&1
+    $json = node $scrapeScript $url $engine 2>&1
     if (-not $?) {
         $rawError = ($json | Out-String).Trim()
         $scrapeError = $null
