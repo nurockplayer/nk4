@@ -105,6 +105,18 @@ function nk4 {
                 if ([string]::IsNullOrWhiteSpace($engine)) { Write-Host "❌ --browser 需要引擎名稱"; return }
                 $i++
             }
+            "--engine" {
+                if ($i + 1 -ge $Remaining.Count -or $Remaining[$i + 1] -like "-*" -or [string]::IsNullOrWhiteSpace($Remaining[$i + 1])) {
+                    Write-Host "❌ --engine 需要引擎名稱"; return
+                }
+                $engine = $Remaining[$i + 1]
+                $i += 2
+            }
+            "--engine=*" {
+                $engine = $Remaining[$i].Substring(9)
+                if ([string]::IsNullOrWhiteSpace($engine)) { Write-Host "❌ --engine 需要引擎名稱"; return }
+                $i++
+            }
             "--dry-run" {
                 $dryRun = $true
                 $i++
@@ -127,7 +139,7 @@ function nk4 {
     }
 
     if ([string]::IsNullOrEmpty($url)) {
-        Write-Host "Usage: nk4 <url> [--browser <chromium|firefox|webkit>] [--cookies-from-browser <browser>] [--dry-run]" -ForegroundColor Yellow
+        Write-Host "Usage: nk4 <url> [--browser <chromium|chrome|firefox|webkit>] [--cookies-from-browser <browser>] [--dry-run]" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "範例:"
         Write-Host "  nk4 https://jable.tv/videos/XXXXX/"
@@ -150,9 +162,9 @@ function nk4 {
     if (-not (Test-Path $pwDir)) {
         Write-Host "📦 安裝 Playwright 依賴..." -ForegroundColor Yellow
         Push-Location $script:Nk4Dir
-        pnpm add playwright *>&1 | Out-Null
+        pnpm install *>&1 | Out-Null
         if (-not $?) {
-            Write-Host "❌ pnpm add playwright 失敗" -ForegroundColor Red
+            Write-Host "❌ pnpm install 失敗" -ForegroundColor Red
             Pop-Location
             return
         }
@@ -161,10 +173,18 @@ function nk4 {
 
     node $browserScript probe $engine
     if ($LASTEXITCODE -ne 0) {
+        if ($engine -eq "chrome") {
+            Write-Host "❌ Google Chrome 無法啟動。請安裝 Chrome，或使用 --engine chromium。"
+            return
+        }
         Write-Host "🌐 安裝 $engine 瀏覽器..." -ForegroundColor Yellow
         Push-Location $script:Nk4Dir
         try {
-            pnpm exec playwright install $engine
+            if ($engine -eq "chromium") {
+                pnpm exec playwright install --only-shell chromium
+            } else {
+                pnpm exec playwright install $engine
+            }
             if ($LASTEXITCODE -ne 0) { return }
         } finally { Pop-Location }
         node $browserScript probe $engine

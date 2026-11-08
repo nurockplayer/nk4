@@ -6,7 +6,7 @@ import { resolveBrowser, launchBrowser, browserNames } from '../browser.mjs';
 test('default, normalized and invalid engine names', () => {
   assert.equal(resolveBrowser(''), 'chromium');
   assert.equal(resolveBrowser(' Firefox '), 'firefox');
-  for (const value of ['chrome', 'safari', '--help', 'firefox; echo bad']) {
+  for (const value of ['safari', '--help', 'firefox; echo bad']) {
     assert.throws(() => resolveBrowser(value), /Unsupported browser engine/);
   }
 });
@@ -15,8 +15,8 @@ for (const name of browserNames) {
     const browser = { close() {} };
     const engines = Object.fromEntries(browserNames.map(engine => [engine, {
       launch: async options => {
-        assert.equal(engine, name);
-        assert.deepEqual(options, { headless: true });
+        assert.equal(engine, name === 'chrome' ? 'chromium' : name);
+        assert.deepEqual(options, name === 'chrome' ? { headless: true, channel: 'chrome' } : { headless: true });
         return browser;
       },
     }]));

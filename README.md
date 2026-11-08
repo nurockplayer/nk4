@@ -89,7 +89,7 @@ nk4 https://jable.tv/videos/XXXXX/ --dry-run
 
 ### 頁面解析引擎
 
-支援 Playwright 的 `chromium`（預設）、`firefox`、`webkit`：
+支援 Playwright 的 `chromium`（預設）、`firefox`、`webkit`，以及系統 `chrome`：
 
 ```bash
 nk4 https://example.com/video --browser firefox
@@ -150,3 +150,16 @@ bash -n setup.sh
 ```
 
 單元測試不需安裝瀏覽器；實際啟動檢查可用 `node browser.mjs probe firefox`（或 chromium / webkit）。
+
+
+### 系統 Chrome 與相容旗標
+
+`--engine` 與 `--browser` 是同義旗標，均接受空格或等號語法；同時提供時最後一個生效，並覆蓋 `NK4_ENGINE`。例如：
+
+```bash
+nk4 https://jable.tv/videos/XXXXX/ --engine chrome --cookies-from-browser firefox --dry-run
+```
+
+`chrome` 使用系統已安裝的 Google Chrome channel，不下載 Chrome，也不自動切換引擎；啟動失敗會停止並提示。預設 `chromium` 僅安裝與專案 Playwright 相符的 Headless Shell（`--only-shell chromium`）。Firefox / WebKit 維持對應引擎安裝。缺少專案依賴時在專案目錄執行 `pnpm install`，不再以 `pnpm add` 改寫依賴宣告。
+
+整合來源：PR #4（nurockplayer，head 0d1b1f744fd3fac9e923e91d7ff6eb30eeedd2a0）。保留共用探測／啟動與 cookie 來源分離；未變動該 PR。

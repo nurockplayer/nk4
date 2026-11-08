@@ -1,7 +1,7 @@
 # nk4: one-command downloader
 # Inspired by yt-dlp — one URL, one download.
 # Supported sites: jable.tv, missav.ai, x.com, twitter.com
-# Usage: nk4 <url> [--browser <chromium|firefox|webkit>] [--cookies-from-browser <browser>] [--dry-run]
+# Usage: nk4 <url> [--browser <chromium|chrome|firefox|webkit>] [--cookies-from-browser <browser>] [--dry-run]
 
 NK4_DIR="${NK4_DIR:-$(cd "$(dirname "${(%):-%x}")" && pwd)}"
 NK4_SCRIPT="$NK4_DIR/scrape.mjs"
@@ -12,11 +12,19 @@ _nk4_ensure_deps() {
   engine=$(node "$NK4_DIR/browser.mjs" name "$1") || return 1
   if [[ ! -d "$NK4_PW" ]]; then
     print "📦 安裝 Playwright 依賴..."
-    (cd "$NK4_DIR" && pnpm add playwright &>/dev/null) || return 1
+    (cd "$NK4_DIR" && pnpm install &>/dev/null) || return 1
   fi
   if ! node "$NK4_DIR/browser.mjs" probe "$engine"; then
+    if [[ "$engine" == chrome ]]; then
+      print "❌ Google Chrome 無法啟動。請安裝 Chrome，或使用 --engine chromium。"
+      return 1
+    fi
     print "🌐 安裝 $engine 瀏覽器..."
-    (cd "$NK4_DIR" && pnpm exec playwright install "$engine") || return 1
+    if [[ "$engine" == chromium ]]; then
+      (cd "$NK4_DIR" && pnpm exec playwright install --only-shell chromium) || return 1
+    else
+      (cd "$NK4_DIR" && pnpm exec playwright install "$engine") || return 1
+    fi
     node "$NK4_DIR/browser.mjs" probe "$engine" || return 1
   fi
   return 0
@@ -126,12 +134,12 @@ nk4() {
   # Parse arguments like yt-dlp style
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --browser)
+      --browser|--engine)
         [[ $# -ge 2 && -n "$2" && "$2" != -* ]] || { echo "❌ --browser 需要引擎名稱"; return 1; }
         engine="$2"
         shift 2
         ;;
-      --browser=*)
+      --browser=*|--engine=*)
         engine="${1#*=}"
         [[ -n "$engine" ]] || { echo "❌ --browser 需要引擎名稱"; return 1; }
         shift
@@ -151,7 +159,7 @@ nk4() {
         ;;
       -*)
         echo "未知參數: $1"
-        echo "Usage: nk4 <url> [--browser <chromium|firefox|webkit>] [--cookies-from-browser <browser>] [--dry-run]"
+        echo "Usage: nk4 <url> [--browser <chromium|chrome|firefox|webkit>] [--cookies-from-browser <browser>] [--dry-run]"
         return 1
         ;;
       *)
@@ -162,7 +170,7 @@ nk4() {
   done
 
   if [[ -z "$url" ]]; then
-    echo "Usage: nk4 <url> [--browser <chromium|firefox|webkit>] [--cookies-from-browser <browser>] [--dry-run]"
+    echo "Usage: nk4 <url> [--browser <chromium|chrome|firefox|webkit>] [--cookies-from-browser <browser>] [--dry-run]"
     echo ""
     echo "支援網站:"
     echo "  jable.tv / missav.ai — 使用 Playwright + yt-dlp（需 cookies）"
@@ -183,11 +191,7 @@ nk4() {
     return $?
   fi
 
-  _nk4_ensure_deps "$engine" || {
-    echo "❌ 自動安裝 Playwright 失败，請手動執行:"
-    echo "  cd $NK4_DIR && pnpm add playwright && pnpm exec playwright install $engine"
-    return 1
-  }
+  _nk4_ensure_deps "$engine" || return 1
 
   echo "🔍 正在解析: $url"
 

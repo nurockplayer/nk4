@@ -53,9 +53,13 @@ fi
 # --- 3. Install playwright + chromium ---
 echo "📦 安裝 Playwright 與所選瀏覽器..."
 cd "$NK4_DIR"
-pnpm add playwright
+pnpm install
 engine=$(node "$NK4_DIR/browser.mjs" name)
-pnpm exec playwright install "$engine"
+if [[ "$engine" == chromium ]]; then
+  pnpm exec playwright install --only-shell chromium
+elif [[ "$engine" != chrome ]]; then
+  pnpm exec playwright install "$engine"
+fi
 node "$NK4_DIR/browser.mjs" probe "$engine"
 echo "✅ Playwright 就緒"
 

@@ -59,12 +59,18 @@ if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
 # --- 3. Install playwright + chromium ---
 Write-Host "📦 安裝 Playwright 與所選瀏覽器..." -ForegroundColor Yellow
 Push-Location $Nk4Dir
-pnpm add playwright *>&1 | Out-Null
+pnpm install *>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "安裝 Playwright 失敗" }
 $engine = node (Join-Path $Nk4Dir "browser.mjs") name
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "無效的 NK4_ENGINE" }
-pnpm exec playwright install $engine
-if ($LASTEXITCODE -ne 0) { Pop-Location; throw "安裝瀏覽器失敗" }
+if ($engine -ne "chrome") {
+    if ($engine -eq "chromium") {
+        pnpm exec playwright install --only-shell chromium
+    } else {
+        pnpm exec playwright install $engine
+    }
+    if ($LASTEXITCODE -ne 0) { Pop-Location; throw "安裝瀏覽器失敗" }
+}
 node (Join-Path $Nk4Dir "browser.mjs") probe $engine
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "瀏覽器啟動失敗" }
 Pop-Location
