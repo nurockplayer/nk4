@@ -83,20 +83,35 @@ nk4 https://jable.tv/videos/XXXXX/ --dry-run
 
 只顯示將要執行的 yt-dlp 指令，不實際下載。
 
-## 自訂瀏覽器
+## 選擇 Playwright 瀏覽器引擎
 
-預設使用 Chrome 匯入 cookie。若使用其他瀏覽器，設定環境變數即可：
+預設使用 Playwright 的 Chromium Headless Shell。也可以使用系統已安裝的 Google Chrome、Playwright Firefox 或 WebKit：
 
 ```bash
-export NK4_BROWSER=brave
-export NK4_BROWSER=edge
-export NK4_BROWSER=firefox
+nk4 https://jable.tv/videos/XXXXX/ --engine chrome
+nk4 https://jable.tv/videos/XXXXX/ --engine firefox
+nk4 https://jable.tv/videos/XXXXX/ --engine webkit
+
+# 設定預設值（也可由 --engine 覆蓋）
+export NK4_ENGINE=firefox
+```
+
+- `chromium`：自動安裝與專案 Playwright 版本相符的 Headless Shell（預設）。
+- `chrome`：使用系統安裝的 Google Chrome，不額外下載 Chromium；需先安裝 Chrome。
+- `firefox` / `webkit`：首次使用時，自動安裝 Playwright 管理的對應瀏覽器。
+
+`--engine` 控制網頁解析引擎；`--cookies-from-browser` 控制 yt-dlp 讀取哪個瀏覽器的 Cookie，兩者互不影響。例如：
+
+```bash
+nk4 https://jable.tv/videos/XXXXX/ --engine firefox --cookies-from-browser brave
 ```
 
 ## 注意事項
 
-- 預設從 Chrome 匯入 cookie，可透過 `NK4_BROWSER` 環境變數切換瀏覽器
-- 腳本中的 Chromium 快取約佔 170MB 硬碟空間，僅第一次安裝時下載。
+- 目前支援 macOS、Linux、Windows；系統瀏覽器與 Playwright 管理的瀏覽器相互獨立。
+- `nk4` 會以專案內的 Playwright 版本啟動瀏覽器，不使用全域 `playwright` 指令的版本。
+- X / Twitter 走 API 下載，不需要 Playwright。
+
 
 ## 檔案結構
 
